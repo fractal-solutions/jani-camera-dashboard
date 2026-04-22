@@ -1,4 +1,4 @@
-const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
+const baseUrl = process.env.BASE_URL ?? "http://localhost:10101";
 
 async function post(path: string, jsonBody: unknown) {
   const res = await fetch(`${baseUrl}${path}`, {
@@ -30,4 +30,3 @@ main().catch(err => {
   console.error(err);
   process.exit(1);
 });
-

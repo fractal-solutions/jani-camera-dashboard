@@ -10,7 +10,7 @@ bun run db:seed
 bun dev
 ```
 
-Open the dashboard at `http://localhost:3000`.
+Open the dashboard at `http://localhost:10101`.
 
 ## Connect a real HX-CCD21 camera (recommended)
 
@@ -54,7 +54,7 @@ Option B (admin API): register via HTTP (requires `ADMIN_TOKEN`)
 PowerShell:
 
 ```powershell
-Invoke-RestMethod -Method Post "http://localhost:3000/api/admin/registerDevice" `
+Invoke-RestMethod -Method Post "http://localhost:10101/api/admin/registerDevice" `
   -Headers @{ "x-admin-token" = "YOUR_ADMIN_TOKEN" } `
   -ContentType "application/json" `
   -Body '{"sn":"YOUR_CAMERA_SN","name":"Entrance Camera","shopName":"Main Shop","dataMode":"Add"}'
@@ -63,7 +63,7 @@ Invoke-RestMethod -Method Post "http://localhost:3000/api/admin/registerDevice" 
 bash/zsh (curl):
 
 ```bash
-curl -X POST http://localhost:3000/api/admin/registerDevice \
+curl -X POST http://localhost:10101/api/admin/registerDevice \
   -H "content-type: application/json" \
   -H "x-admin-token: YOUR_ADMIN_TOKEN" \
   -d '{"sn":"YOUR_CAMERA_SN","name":"Entrance Camera","shopName":"Main Shop","dataMode":"Add"}'
@@ -73,12 +73,12 @@ curl -X POST http://localhost:3000/api/admin/registerDevice \
 
 Set these in the HX-CCD21 configuration (from the vendor protocol PDF):
 
-- Heartbeat URL: `http://<YOUR_SERVER_HOST>:3000/api/camera/heartBeat`
-- Data upload URL: `http://<YOUR_SERVER_HOST>:3000/api/camera/dataUpload`
+- Heartbeat URL: `http://<YOUR_SERVER_HOST>:10101/api/camera/heartBeat`
+- Data upload URL: `http://<YOUR_SERVER_HOST>:10101/api/camera/dataUpload`
 
 Examples:
 
-- LAN: `http://192.168.1.10:3000/api/camera/heartBeat`
+- LAN: `http://192.168.1.10:10101/api/camera/heartBeat`
 - Public: `https://example.com/api/camera/heartBeat` (recommended behind TLS)
 
 ## Camera API (strict)

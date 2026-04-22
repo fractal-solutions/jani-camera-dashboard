@@ -1,4 +1,4 @@
-const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
+const baseUrl = process.env.BASE_URL ?? "http://localhost:10101";
 const sn = process.env.SN ?? "HX-CCD21-DEMO-0001";
 const mode = (process.env.DATA_MODE ?? "Add") as "Add" | "Total";
 
@@ -88,4 +88,3 @@ main().catch(err => {
   console.error(err);
   process.exit(1);
 });
-

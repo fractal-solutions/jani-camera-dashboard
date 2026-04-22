@@ -12,6 +12,7 @@ function apiHandler(req: Request, server: Parameters<NonNullable<Bun.ServeOption
 }
 
 const server = serve({
+  port: Number(process.env.PORT ?? "10101"),
   routes: {
     "/ws": (req, server) => {
       if (server.upgrade(req)) return;
