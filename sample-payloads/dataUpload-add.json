@@ -1,0 +1,22 @@
+{
+  "sn": "HX-CCD21-DEMO-0001",
+  "startTime": 1710000000,
+  "endTime": 1710000060,
+  "time": 1710000060,
+  "in": 3,
+  "out": 1,
+  "passby": 5,
+  "turnback": 1,
+  "avgStayTime": 60000,
+  "attributes": [
+    {
+      "personId": "p-1710000060-1",
+      "eventType": 0,
+      "gender": 1,
+      "age": [25, 35],
+      "height": 172,
+      "stayTime": 45000
+    }
+  ]
+}
+
