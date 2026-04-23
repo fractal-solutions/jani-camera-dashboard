@@ -135,6 +135,17 @@ export function App() {
   const [people, setPeople] = useState<PersonRow[]>([]);
   const [adminToken, setAdminToken] = useState<string>(() => localStorage.getItem("adminToken") ?? "");
   const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
+  const [newDevice, setNewDevice] = useState<{ sn: string; name: string; mode: "Add" | "Total"; shopId: number | "" }>({
+    sn: "",
+    name: "",
+    mode: "Add",
+    shopId: "",
+  });
+  const [shopEdits, setShopEdits] = useState<{ timezoneOffsetMinutes: number | ""; occupancyLimit: number | ""; inactivityMinutes: number | "" }>({
+    timezoneOffsetMinutes: "",
+    occupancyLimit: "",
+    inactivityMinutes: "",
+  });
 
   const selectedShop = shops.find(s => s.id === shopId);
   const deviceRows = useMemo(() => devices.filter(d => (shopId ? d.shop_id === shopId : true)), [devices, shopId]);
@@ -158,6 +169,19 @@ export function App() {
     const sn = deviceRows[0]?.sn ?? "";
     setSelectedSn(prev => (prev ? prev : sn));
   }, [deviceRows]);
+
+  useEffect(() => {
+    setNewDevice(prev => ({ ...prev, shopId: prev.shopId === "" ? (shopId ?? "") : prev.shopId }));
+  }, [shopId]);
+
+  useEffect(() => {
+    if (!selectedShop) return;
+    setShopEdits({
+      timezoneOffsetMinutes: selectedShop.timezone_offset_minutes,
+      occupancyLimit: selectedShop.occupancy_limit,
+      inactivityMinutes: selectedShop.inactivity_minutes_limit,
+    });
+  }, [selectedShop?.id]);
 
   useEffect(() => {
     if (!shopId) return;
@@ -457,6 +481,91 @@ export function App() {
         {tab === "devices" ? (
           <div className="mt-6">
             <Card title="Device monitoring" right={<GhostButton onClick={() => api.devices().then(setDevices).catch(() => {})}>Refresh</GhostButton>}>
+              <div className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="lg:col-span-1">
+                  <div className="text-sm text-white/70">Admin token (optional on LAN)</div>
+                  <input
+                    value={adminToken}
+                    onChange={e => {
+                      setAdminToken(e.target.value);
+                      localStorage.setItem("adminToken", e.target.value);
+                    }}
+                    placeholder="Set ADMIN_TOKEN in .env, paste it here"
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                  />
+                  <div className="mt-2 text-xs text-white/50">If the server is public, set `ADMIN_TOKEN` and paste it here.</div>
+                </div>
+
+                <div className="lg:col-span-2">
+                  <div className="text-sm font-medium text-white/75">Add device</div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+                    <input
+                      value={newDevice.name}
+                      onChange={e => setNewDevice(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="Name (e.g. Entrance)"
+                      className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                    />
+                    <input
+                      value={newDevice.sn}
+                      onChange={e => setNewDevice(prev => ({ ...prev, sn: e.target.value }))}
+                      placeholder="SN (from camera)"
+                      className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-mono outline-none focus:border-white/20"
+                    />
+                    <select
+                      value={newDevice.shopId}
+                      onChange={e => setNewDevice(prev => ({ ...prev, shopId: e.target.value ? Number(e.target.value) : "" }))}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
+                    >
+                      <option value="" className="bg-slate-900">
+                        Select shop
+                      </option>
+                      {shops.map(s => (
+                        <option key={s.id} value={s.id} className="bg-slate-900">
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={newDevice.mode}
+                      onChange={e => setNewDevice(prev => ({ ...prev, mode: e.target.value as "Add" | "Total" }))}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
+                    >
+                      <option value="Add" className="bg-slate-900">
+                        Add (incremental)
+                      </option>
+                      <option value="Total" className="bg-slate-900">
+                        Total (cumulative)
+                      </option>
+                    </select>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="text-xs text-white/50">
+                      This uses the same backend logic as seeding, but from the UI.
+                    </div>
+                    <PrimaryButton
+                      disabled={!newDevice.sn.trim() || !newDevice.name.trim() || newDevice.shopId === ""}
+                      onClick={() => {
+                        const shop = shops.find(s => s.id === newDevice.shopId);
+                        if (!shop) return;
+                        api
+                          .registerDevice(adminToken || undefined, {
+                            sn: newDevice.sn.trim(),
+                            name: newDevice.name.trim(),
+                            shopName: shop.name,
+                            dataMode: newDevice.mode,
+                            timezoneOffsetMinutes: shop.timezone_offset_minutes,
+                          })
+                          .then(() => api.devices().then(setDevices))
+                          .then(() => setNewDevice(prev => ({ ...prev, sn: "", name: "" })))
+                          .catch(err => alert(String(err)));
+                      }}
+                    >
+                      Add device
+                    </PrimaryButton>
+                  </div>
+                </div>
+              </div>
+
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[860px] text-left text-sm">
                   <thead className="text-xs text-white/55">
@@ -469,6 +578,7 @@ export function App() {
                       <th className="py-2">Last seen</th>
                       <th className="py-2">IP</th>
                       <th className="py-2">MAC</th>
+                      <th className="py-2"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
@@ -482,6 +592,20 @@ export function App() {
                         <td className="py-3 pr-3">{formatAgo(d.last_seen)}</td>
                         <td className="py-3 pr-3 font-mono text-xs text-white/70">{d.ip_address ?? "—"}</td>
                         <td className="py-3 pr-3 font-mono text-xs text-white/70">{d.mac_address ?? "—"}</td>
+                        <td className="py-3 pr-3 text-right">
+                          <GhostButton
+                            onClick={() => {
+                              const ok = confirm(`Remove device ${d.name} (${d.sn})? This deletes its data.`);
+                              if (!ok) return;
+                              api
+                                .deleteDevice(adminToken || undefined, d.sn)
+                                .then(() => api.devices().then(setDevices))
+                                .catch(err => alert(String(err)));
+                            }}
+                          >
+                            Remove
+                          </GhostButton>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -512,6 +636,20 @@ export function App() {
                         <div className="mt-1 font-mono text-white/80">{d.ip_address ?? "—"}</div>
                       </div>
                     </div>
+                    <div className="mt-3 flex justify-end">
+                      <GhostButton
+                        onClick={() => {
+                          const ok = confirm(`Remove device ${d.name} (${d.sn})? This deletes its data.`);
+                          if (!ok) return;
+                          api
+                            .deleteDevice(adminToken || undefined, d.sn)
+                            .then(() => api.devices().then(setDevices))
+                            .catch(err => alert(String(err)));
+                        }}
+                      >
+                        Remove device
+                      </GhostButton>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -522,7 +660,7 @@ export function App() {
         {tab === "people" ? (
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card title="People settings">
-              <div className="text-sm text-white/70">Admin token (for labeling)</div>
+              <div className="text-sm text-white/70">Admin token (optional on LAN)</div>
               <input
                 value={adminToken}
                 onChange={e => {
@@ -556,7 +694,7 @@ export function App() {
               </div>
 
               <div className="mt-4 text-xs text-white/50">
-                Labeling works only if the camera sends stable <span className="font-mono">attributes.personId</span> values.
+                Labeling works only if the camera sends stable <span className="font-mono">attributes.personId</span> values. Public server = token required.
               </div>
             </Card>
 
@@ -602,13 +740,13 @@ export function App() {
                             <td className="py-3 pr-3">{p.age_min && p.age_max ? `${p.age_min}-${p.age_max}` : "—"}</td>
                             <td className="py-3 pr-3">
                               <PrimaryButton
-                                disabled={!adminToken || !selectedSn}
+                                disabled={!selectedSn}
                                 onClick={() => {
-                                  if (!adminToken || !selectedSn) return;
+                                  if (!selectedSn) return;
                                   api
-                                    .labelPerson(adminToken, selectedSn, p.person_id, current)
+                                    .labelPerson(adminToken || undefined, selectedSn, p.person_id, current)
                                     .then(() => api.people(selectedSn, 200).then(setPeople))
-                                    .catch(() => {});
+                                    .catch(err => alert(String(err)));
                                 }}
                               >
                                 Save
@@ -663,13 +801,13 @@ export function App() {
                         </div>
                         <div className="mt-3 flex justify-end">
                           <PrimaryButton
-                            disabled={!adminToken || !selectedSn}
+                            disabled={!selectedSn}
                             onClick={() => {
-                              if (!adminToken || !selectedSn) return;
+                              if (!selectedSn) return;
                               api
-                                .labelPerson(adminToken, selectedSn, p.person_id, current)
+                                .labelPerson(adminToken || undefined, selectedSn, p.person_id, current)
                                 .then(() => api.people(selectedSn, 200).then(setPeople))
-                                .catch(() => {});
+                                .catch(err => alert(String(err)));
                             }}
                           >
                             Save label
@@ -716,6 +854,89 @@ export function App() {
               </div>
               <div className="mt-4 text-xs text-white/50">
                 Use your PC’s LAN IP or public domain in the camera UI (don’t use <span className="font-mono">localhost</span> from the camera).
+              </div>
+            </Card>
+
+            <Card title="Shop settings (UI-configurable)">
+              <div className="text-sm text-white/70">Configure timezone + alert thresholds for the selected shop.</div>
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs text-white/55">Timezone offset (minutes)</div>
+                  <input
+                    type="number"
+                    value={shopEdits.timezoneOffsetMinutes}
+                    onChange={e =>
+                      setShopEdits(prev => ({
+                        ...prev,
+                        timezoneOffsetMinutes: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                    placeholder="e.g. 180"
+                  />
+                  <div className="mt-2 text-xs text-white/45">Example: Nairobi = +180.</div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/55">Occupancy limit</div>
+                  <input
+                    type="number"
+                    value={shopEdits.occupancyLimit}
+                    onChange={e =>
+                      setShopEdits(prev => ({
+                        ...prev,
+                        occupancyLimit: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                    placeholder="e.g. 50"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/55">Inactivity limit (minutes)</div>
+                  <input
+                    type="number"
+                    value={shopEdits.inactivityMinutes}
+                    onChange={e =>
+                      setShopEdits(prev => ({
+                        ...prev,
+                        inactivityMinutes: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                    placeholder="e.g. 10"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-white/50">
+                  Public server = set <span className="font-mono">ADMIN_TOKEN</span>. This updates the DB and affects “today/hourly” charts.
+                </div>
+                <PrimaryButton
+                  disabled={!selectedShop}
+                  onClick={() => {
+                    if (!selectedShop) return;
+                    api
+                      .updateShop(adminToken || undefined, {
+                        id: selectedShop.id,
+                        timezoneOffsetMinutes:
+                          shopEdits.timezoneOffsetMinutes === "" ? undefined : Math.trunc(shopEdits.timezoneOffsetMinutes),
+                        occupancyLimit: shopEdits.occupancyLimit === "" ? undefined : Math.trunc(shopEdits.occupancyLimit),
+                        inactivityMinutes: shopEdits.inactivityMinutes === "" ? undefined : Math.trunc(shopEdits.inactivityMinutes),
+                      })
+                      .then(() => Promise.all([api.shops(), api.overview(selectedShop.id)]))
+                      .then(([s, o]) => {
+                        setShops(s);
+                        setOverview(o);
+                        setShopOccupancy(o.occupancy);
+                      })
+                      .catch(err => alert(String(err)));
+                  }}
+                >
+                  Save settings
+                </PrimaryButton>
               </div>
             </Card>
 

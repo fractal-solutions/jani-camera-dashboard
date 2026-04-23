@@ -136,4 +136,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_person_labels_sn ON person_labels(sn);
     `,
   },
+  {
+    id: "006_fix_upsert_indexes",
+    up: `
+      -- Ensure upsert targets work on all SQLite builds by using non-partial UNIQUE indexes.
+      DROP INDEX IF EXISTS uq_flow_events_event_uid;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_events_event_uid ON flow_events(event_uid);
+
+      DROP INDEX IF EXISTS uq_people_attrs_src_person_ts;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_people_attrs_src_person_ts
+        ON people_attributes(source_event_uid, person_id, timestamp, event_type);
+    `,
+  },
 ];

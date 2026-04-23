@@ -12,8 +12,29 @@ function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
 }
 
-function requireAdmin(req: Request): Response | null {
-  if (!CONFIG.adminToken) return json({ code: 500, msg: "ADMIN_TOKEN not configured" }, { status: 500 });
+function isTrustedAdminIp(ip: string): boolean {
+  if (ip === "127.0.0.1" || ip === "::1") return true;
+  // IPv4 private ranges
+  if (ip.startsWith("10.")) return true;
+  if (ip.startsWith("192.168.")) return true;
+  if (ip.startsWith("172.")) {
+    const parts = ip.split(".");
+    const second = Number(parts[1]);
+    if (Number.isFinite(second) && second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+function requireAdmin(req: Request, server: Server): Response | null {
+  const ip = server.requestIP(req)?.address ?? "unknown";
+
+  // Convenience mode: if ADMIN_TOKEN is not set, allow admin actions only from localhost/private LAN.
+  // For public deployments, set ADMIN_TOKEN to enforce auth.
+  if (!CONFIG.adminToken) {
+    if (ip !== "unknown" && isTrustedAdminIp(ip)) return null;
+    return json({ code: 401, msg: "admin locked: set ADMIN_TOKEN" }, { status: 401 });
+  }
+
   const token = req.headers.get("x-admin-token");
   if (!token || token !== CONFIG.adminToken) return json({ code: 401, msg: "unauthorized" }, { status: 401 });
   return null;
@@ -75,7 +96,7 @@ export function createApi(server: Server, hub: WsHub) {
 
       // Admin: register device/shop
       if (path === "/api/admin/registerDevice" && req.method === "POST") {
-        const auth = requireAdmin(req);
+        const auth = requireAdmin(req, server);
         if (auth) return auth;
         const body = await readJson(req);
         if (typeof body !== "object" || body === null) return badRequest("body must be object");
@@ -99,8 +120,23 @@ export function createApi(server: Server, hub: WsHub) {
         return json({ code: 0, msg: "success", data: { sn, name, shopName, dataMode } });
       }
 
+      if (path === "/api/admin/deleteDevice" && req.method === "POST") {
+        const auth = requireAdmin(req, server);
+        if (auth) return auth;
+        const body = await readJson(req);
+        if (typeof body !== "object" || body === null) return badRequest("body must be object");
+        const b = body as Record<string, unknown>;
+        const sn = typeof b.sn === "string" ? b.sn.trim() : "";
+        if (!sn) return badRequest("sn required");
+        const device = db.query<{ sn: string }, [string]>("SELECT sn FROM devices WHERE sn = ?").get(sn);
+        if (!device) return snNotFound();
+
+        db.query("DELETE FROM devices WHERE sn = ?").run(sn);
+        return json({ code: 0, msg: "success", data: { sn } });
+      }
+
       if (path === "/api/admin/labelPerson" && req.method === "POST") {
-        const auth = requireAdmin(req);
+        const auth = requireAdmin(req, server);
         if (auth) return auth;
         const body = await readJson(req);
         if (typeof body !== "object" || body === null) return badRequest("body must be object");
@@ -215,7 +251,7 @@ export function createApi(server: Server, hub: WsHub) {
       }
 
       if (path === "/api/admin/updateShop" && req.method === "POST") {
-        const auth = requireAdmin(req);
+        const auth = requireAdmin(req, server);
         if (auth) return auth;
         const body = await readJson(req);
         if (typeof body !== "object" || body === null) return badRequest("body must be object");
@@ -387,7 +423,7 @@ export function createApi(server: Server, hub: WsHub) {
             `INSERT INTO flow_events
               (event_uid, sn, timestamp, start_time, end_time, in_count, out_count, passby, turnback, avg_stay_time_ms, data_mode, raw_in, raw_out, raw_passby, raw_turnback, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(event_uid) DO NOTHING`,
+             ON CONFLICT DO NOTHING`,
           ).run(
             eventUid,
             payload.sn,

@@ -6,11 +6,17 @@ Production-oriented starter for an HX-CCD21 (AI people counting camera) backend 
 
 ```bash
 bun install
+bun run db:migrate
 bun run db:seed
 bun dev
 ```
 
 Open the dashboard at `http://localhost:10101`.
+
+## Run modes
+
+- Development (hot reload): `bun dev`
+- Production: `bun start`
 
 ## Connect a real HX-CCD21 camera (recommended)
 
@@ -112,12 +118,21 @@ Uses Bun built-in SQLite (`bun:sqlite`) by default.
 
 DB file path: `DB_PATH` (default: `./data/app.sqlite`).
 
+### Why you must run `db:migrate`
+
+`bun run db:migrate` creates/updates the SQLite schema (tables, columns, indexes). Run it:
+
+- On first install (empty DB)
+- On every deploy after pulling new code (new migrations may be required)
+
+It is safe to run repeatedly: applied migrations are tracked in `schema_migrations` and only new migrations run.
+
 ## Timezone configuration
 
 This dashboard groups “today / hourly / daily” using a **shop timezone offset** (minutes).
 
 - Default offset comes from `TZ_OFFSET_MINUTES` (see `.env.example`).
-- Per-shop override via admin API:
+- Per-shop override via UI (Setup tab) or admin API:
 
 ```powershell
 Invoke-RestMethod -Method Post "http://localhost:10101/api/admin/updateShop" `
@@ -155,6 +170,17 @@ Optional env:
 
 ## Admin (optional)
 
-Register devices via API (requires `ADMIN_TOKEN`):
+### Admin token
+
+For convenience: if `ADMIN_TOKEN` is **not** set, the dashboard allows admin actions **only from localhost/private LAN**.
+
+If you expose this server publicly, you should set `ADMIN_TOKEN` and provide it in requests (and paste it into the UI).
+
+### Admin endpoints
+
+Register devices via API:
 
 - `POST /api/admin/registerDevice` (header `x-admin-token`)
+- `POST /api/admin/deleteDevice` (header `x-admin-token`)
+
+UI note: you can also add/remove devices from the dashboard under the **Devices** tab (paste your `ADMIN_TOKEN` once).

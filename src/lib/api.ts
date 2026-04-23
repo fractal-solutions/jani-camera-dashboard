@@ -100,10 +100,34 @@ export const api = {
   analytics: (range: "today" | "week" | "month", shopId?: number) =>
     getJson<Analytics>(`/api/analytics?range=${range}${shopId ? `&shopId=${shopId}` : ""}`),
   people: (sn: string, limit = 100) => getJson<PersonRow[]>(`/api/people?sn=${encodeURIComponent(sn)}&limit=${limit}`),
-  labelPerson: (token: string, sn: string, personId: string, label: string) =>
+  registerDevice: (
+    token: string | undefined,
+    payload: { sn: string; name: string; shopName: string; dataMode: "Add" | "Total"; timezoneOffsetMinutes?: number },
+  ) =>
+    postJson<{ sn: string; name: string; shopName: string; dataMode: "Add" | "Total" }>(
+      "/api/admin/registerDevice",
+      payload,
+      token ? { "x-admin-token": token } : undefined,
+    ),
+  updateShop: (
+    token: string | undefined,
+    payload: { id: number; timezoneOffsetMinutes?: number; occupancyLimit?: number; inactivityMinutes?: number },
+  ) =>
+    postJson<{ id: number }>(
+      "/api/admin/updateShop",
+      payload,
+      token ? { "x-admin-token": token } : undefined,
+    ),
+  deleteDevice: (token: string | undefined, sn: string) =>
+    postJson<{ sn: string }>(
+      "/api/admin/deleteDevice",
+      { sn },
+      token ? { "x-admin-token": token } : undefined,
+    ),
+  labelPerson: (token: string | undefined, sn: string, personId: string, label: string) =>
     postJson<{ sn: string; personId: string; label: string }>(
       "/api/admin/labelPerson",
       { sn, personId, label },
-      { "x-admin-token": token },
+      token ? { "x-admin-token": token } : undefined,
     ),
 };
