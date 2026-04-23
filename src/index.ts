@@ -22,13 +22,22 @@ const server = serve({
     // API routes
     "/api/health": apiHandler,
     "/api/admin/registerDevice": apiHandler,
+    "/api/admin/updateShop": apiHandler,
+    "/api/admin/labelPerson": apiHandler,
     "/api/devices": apiHandler,
     "/api/shops": apiHandler,
     "/api/overview": apiHandler,
     "/api/analytics": apiHandler,
     "/api/traffic/live": apiHandler,
+    "/api/people": apiHandler,
     "/api/camera/heartBeat": apiHandler,
     "/api/camera/dataUpload": apiHandler,
+    "/api/camera/dup": apiHandler,
+    "/api/camera/reid": apiHandler,
+    "/api/labels": apiHandler,
+
+    "/dup": apiHandler,
+    "/reid": apiHandler,
 
     // Frontend + dev bundling/HMR
     "/*": index,

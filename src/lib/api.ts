@@ -8,10 +8,23 @@ async function getJson<T>(path: string): Promise<T> {
   return body.data;
 }
 
+async function postJson<T>(path: string, payload: unknown, headers?: Record<string, string>): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(headers ?? {}) },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  const body = (await res.json()) as ApiEnvelope<T>;
+  if (body.code !== 0) throw new Error(body.msg || "API error");
+  return body.data;
+}
+
 export type Shop = {
   id: number;
   name: string;
   timezone: string | null;
+  timezone_offset_minutes: number;
   occupancy_limit: number;
   inactivity_minutes_limit: number;
 };
@@ -35,8 +48,10 @@ export type Overview = {
   passby: number;
   turnback: number;
   avgDwellMs: number | null;
-  peakNetPerMinute: number;
+  peakOccupancy: number;
+  returnVisitors: number;
   occupancy: number | null;
+  timezoneOffsetMinutes?: number;
 };
 
 export type LiveTraffic = {
@@ -62,6 +77,20 @@ export type Analytics = {
   };
 };
 
+export type PersonRow = {
+  person_id: string;
+  last_seen: number;
+  events: number;
+  enters: number;
+  leaves: number;
+  returns: number;
+  pass: number;
+  gender: number | null;
+  age_min: number | null;
+  age_max: number | null;
+  label: string | null;
+};
+
 export const api = {
   shops: () => getJson<Shop[]>("/api/shops"),
   devices: () => getJson<Device[]>("/api/devices"),
@@ -70,5 +99,11 @@ export const api = {
     getJson<LiveTraffic>(`/api/traffic/live?minutes=${minutes}${shopId ? `&shopId=${shopId}` : ""}`),
   analytics: (range: "today" | "week" | "month", shopId?: number) =>
     getJson<Analytics>(`/api/analytics?range=${range}${shopId ? `&shopId=${shopId}` : ""}`),
+  people: (sn: string, limit = 100) => getJson<PersonRow[]>(`/api/people?sn=${encodeURIComponent(sn)}&limit=${limit}`),
+  labelPerson: (token: string, sn: string, personId: string, label: string) =>
+    postJson<{ sn: string; personId: string; label: string }>(
+      "/api/admin/labelPerson",
+      { sn, personId, label },
+      { "x-admin-token": token },
+    ),
 };
-

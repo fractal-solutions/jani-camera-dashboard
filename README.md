@@ -76,6 +76,11 @@ Set these in the HX-CCD21 configuration (from the vendor protocol PDF):
 - Heartbeat URL: `http://<YOUR_SERVER_HOST>:10101/api/camera/heartBeat`
 - Data upload URL: `http://<YOUR_SERVER_HOST>:10101/api/camera/dataUpload`
 
+Optional (per vendor PDF v2.4): daily reports for deduplication + re-identification:
+
+- Duplicate report URL: `http://<YOUR_SERVER_HOST>:10101/dup` (or `/api/camera/dup`)
+- REID report URL: `http://<YOUR_SERVER_HOST>:10101/reid` (or `/api/camera/reid`)
+
 Examples:
 
 - LAN: `http://192.168.1.10:10101/api/camera/heartBeat`
@@ -106,6 +111,33 @@ Uses Bun built-in SQLite (`bun:sqlite`) by default.
 - Seed demo shop/device: `bun run db:seed`
 
 DB file path: `DB_PATH` (default: `./data/app.sqlite`).
+
+## Timezone configuration
+
+This dashboard groups “today / hourly / daily” using a **shop timezone offset** (minutes).
+
+- Default offset comes from `TZ_OFFSET_MINUTES` (see `.env.example`).
+- Per-shop override via admin API:
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:10101/api/admin/updateShop" `
+  -Headers @{ "x-admin-token" = "YOUR_ADMIN_TOKEN" } `
+  -ContentType "application/json" `
+  -Body '{"id":1,"timezoneOffsetMinutes":180}'
+```
+
+## Person IDs + labels (best-effort)
+
+If attribute upload is enabled on the camera, `attributes.personId` is stored and the Overview shows `returnVisitors` when `eventType = 3` (camera-defined return).
+
+You can label known `personId` values (requires `ADMIN_TOKEN`):
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:10101/api/admin/labelPerson" `
+  -Headers @{ "x-admin-token" = "YOUR_ADMIN_TOKEN" } `
+  -ContentType "application/json" `
+  -Body '{"sn":"YOUR_CAMERA_SN","personId":"973","label":"Staff - John"}'
+```
 
 ## Simulator
 

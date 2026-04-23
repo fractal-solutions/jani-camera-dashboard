@@ -5,6 +5,7 @@ export type HeartbeatPayload = {
   timestamp: number;
   ipAddress?: string;
   macAddress?: string;
+  timeZone?: number;
   [k: string]: unknown;
 };
 
@@ -60,6 +61,7 @@ export function parseHeartbeat(body: unknown): HeartbeatPayload {
     timestamp: asInt(body.timestamp, "timestamp")!,
     ipAddress: typeof body.ipAddress === "string" ? body.ipAddress : undefined,
     macAddress: typeof body.macAddress === "string" ? body.macAddress : undefined,
+    timeZone: typeof body.timeZone === "number" ? Math.trunc(body.timeZone) : undefined,
     ...body,
   };
 }
@@ -75,7 +77,10 @@ export function parseDataUpload(body: unknown): DataUploadPayload {
           const attr = a as Record<string, unknown>;
           const age = Array.isArray(attr.age) && attr.age.length === 2 ? [Number(attr.age[0]), Number(attr.age[1])] : undefined;
           return {
-            personId: typeof attr.personId === "string" ? attr.personId : undefined,
+            personId:
+              typeof attr.personId === "string" ? attr.personId
+              : typeof attr.personId === "number" ? String(Math.trunc(attr.personId))
+              : undefined,
             eventType: typeof attr.eventType === "number" ? Math.trunc(attr.eventType) : undefined,
             gender: typeof attr.gender === "number" ? Math.trunc(attr.gender) : undefined,
             age: age ? [Math.trunc(age[0] ?? 0), Math.trunc(age[1] ?? 0)] : undefined,
@@ -101,4 +106,3 @@ export function parseDataUpload(body: unknown): DataUploadPayload {
     dataMode,
   };
 }
-

@@ -33,6 +33,31 @@ function safeDelta(current: number, last: number): number {
   return d < 0 ? 0 : d;
 }
 
+function buildEventUid(payload: {
+  sn: string;
+  time: number;
+  startTime?: number;
+  endTime?: number;
+  in: number;
+  out: number;
+  passby: number;
+  turnback: number;
+  avgStayTime?: number;
+}, mode: DataMode): string {
+  return [
+    payload.sn,
+    payload.time,
+    payload.startTime ?? "",
+    payload.endTime ?? "",
+    mode,
+    payload.in,
+    payload.out,
+    payload.passby,
+    payload.turnback,
+    payload.avgStayTime ?? "",
+  ].join("|");
+}
+
 export function createApi(server: Server, hub: WsHub) {
   migrateDb();
   const db = getDb();
@@ -59,11 +84,12 @@ export function createApi(server: Server, hub: WsHub) {
         const name = typeof b.name === "string" ? b.name.trim() : "Camera";
         const shopName = typeof b.shopName === "string" ? b.shopName.trim() : "Main Shop";
         const dataMode = b.dataMode === "Add" || b.dataMode === "Total" ? (b.dataMode as DataMode) : CONFIG.defaultDataMode;
+        const timezoneOffsetMinutes = typeof b.timezoneOffsetMinutes === "number" ? Math.trunc(b.timezoneOffsetMinutes) : CONFIG.timezoneOffsetMinutes;
         if (!sn) return badRequest("sn required");
         const tx = db.transaction(() => {
           db.query(
-            "INSERT INTO shops (name, timezone, occupancy_limit, inactivity_minutes_limit, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO NOTHING",
-          ).run(shopName, CONFIG.timezone, CONFIG.occupancyDefaultLimit, CONFIG.inactivityDefaultMinutes, nowUnix());
+            "INSERT INTO shops (name, timezone, timezone_offset_minutes, occupancy_limit, inactivity_minutes_limit, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET timezone_offset_minutes=excluded.timezone_offset_minutes",
+          ).run(shopName, CONFIG.timezone, timezoneOffsetMinutes, CONFIG.occupancyDefaultLimit, CONFIG.inactivityDefaultMinutes, nowUnix());
           const shop = db.query<{ id: number }, [string]>("SELECT id FROM shops WHERE name = ?").get(shopName);
           db.query(
             "INSERT INTO devices (sn, name, shop_id, status, data_mode, created_at) VALUES (?, ?, ?, 'offline', ?, ?) ON CONFLICT(sn) DO UPDATE SET name=excluded.name, shop_id=excluded.shop_id, data_mode=excluded.data_mode",
@@ -71,6 +97,97 @@ export function createApi(server: Server, hub: WsHub) {
         });
         tx();
         return json({ code: 0, msg: "success", data: { sn, name, shopName, dataMode } });
+      }
+
+      if (path === "/api/admin/labelPerson" && req.method === "POST") {
+        const auth = requireAdmin(req);
+        if (auth) return auth;
+        const body = await readJson(req);
+        if (typeof body !== "object" || body === null) return badRequest("body must be object");
+        const b = body as Record<string, unknown>;
+        const sn = typeof b.sn === "string" ? b.sn.trim() : "";
+        const personId =
+          typeof b.personId === "string" ? b.personId.trim()
+          : typeof b.personId === "number" ? String(Math.trunc(b.personId))
+          : "";
+        const label = typeof b.label === "string" ? b.label.trim() : "";
+        if (!sn) return badRequest("sn required");
+        if (!personId) return badRequest("personId required");
+        if (!label) return badRequest("label required");
+
+        const device = db.query<{ sn: string }, [string]>("SELECT sn FROM devices WHERE sn = ?").get(sn);
+        if (!device) return snNotFound();
+
+        db.query(
+          `INSERT INTO person_labels (sn, person_id, label, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(sn, person_id) DO UPDATE SET
+             label=excluded.label,
+             updated_at=excluded.updated_at`,
+        ).run(sn, personId, label, nowUnix(), nowUnix());
+
+        return json({ code: 0, msg: "success", data: { sn, personId, label } });
+      }
+
+      if (path === "/api/labels" && req.method === "GET") {
+        const sn = (url.searchParams.get("sn") ?? "").trim();
+        if (!sn) return badRequest("sn required");
+        const rows = db
+          .query<{ person_id: string; label: string }, [string]>(
+            `SELECT person_id, label FROM person_labels WHERE sn = ? ORDER BY updated_at DESC`,
+          )
+          .all(sn);
+        return json({ code: 0, msg: "success", data: rows });
+      }
+
+      if (path === "/api/people" && req.method === "GET") {
+        const sn = (url.searchParams.get("sn") ?? "").trim();
+        if (!sn) return badRequest("sn required");
+        const limitParam = Number(url.searchParams.get("limit") ?? "100");
+        const limit = Number.isFinite(limitParam) ? Math.max(10, Math.min(500, Math.trunc(limitParam))) : 100;
+
+        const device = db.query<{ sn: string }, [string]>("SELECT sn FROM devices WHERE sn = ?").get(sn);
+        if (!device) return snNotFound();
+
+        const rows = db
+          .query<
+            {
+              person_id: string;
+              last_seen: number;
+              events: number;
+              enters: number;
+              leaves: number;
+              returns: number;
+              pass: number;
+              gender: number | null;
+              age_min: number | null;
+              age_max: number | null;
+              label: string | null;
+            },
+            [string, number]
+          >(
+            `SELECT
+              pa.person_id AS person_id,
+              MAX(pa.timestamp) AS last_seen,
+              COUNT(*) AS events,
+              SUM(CASE WHEN pa.event_type = 0 THEN 1 ELSE 0 END) AS enters,
+              SUM(CASE WHEN pa.event_type = 1 THEN 1 ELSE 0 END) AS leaves,
+              SUM(CASE WHEN pa.event_type = 3 THEN 1 ELSE 0 END) AS returns,
+              SUM(CASE WHEN pa.event_type = 2 THEN 1 ELSE 0 END) AS pass,
+              MAX(pa.gender) AS gender,
+              MAX(pa.age_min) AS age_min,
+              MAX(pa.age_max) AS age_max,
+              pl.label AS label
+            FROM people_attributes pa
+            LEFT JOIN person_labels pl ON pl.sn = pa.sn AND pl.person_id = pa.person_id
+            WHERE pa.sn = ? AND pa.person_id IS NOT NULL
+            GROUP BY pa.person_id
+            ORDER BY last_seen DESC
+            LIMIT ?`,
+          )
+          .all(sn, limit);
+
+        return json({ code: 0, msg: "success", data: rows });
       }
 
       // Admin: devices list
@@ -89,7 +206,7 @@ export function createApi(server: Server, hub: WsHub) {
       if (path === "/api/shops" && req.method === "GET") {
         const shops = db
           .query(
-            `SELECT id, name, timezone, occupancy_limit, inactivity_minutes_limit
+            `SELECT id, name, timezone, timezone_offset_minutes, occupancy_limit, inactivity_minutes_limit
              FROM shops
              ORDER BY name ASC`,
           )
@@ -97,24 +214,59 @@ export function createApi(server: Server, hub: WsHub) {
         return json({ code: 0, msg: "success", data: shops });
       }
 
+      if (path === "/api/admin/updateShop" && req.method === "POST") {
+        const auth = requireAdmin(req);
+        if (auth) return auth;
+        const body = await readJson(req);
+        if (typeof body !== "object" || body === null) return badRequest("body must be object");
+        const b = body as Record<string, unknown>;
+        const id = typeof b.id === "number" ? Math.trunc(b.id) : NaN;
+        if (!Number.isFinite(id)) return badRequest("id required");
+        const tzOffsetMinutes = typeof b.timezoneOffsetMinutes === "number" ? Math.trunc(b.timezoneOffsetMinutes) : undefined;
+        const occupancyLimit = typeof b.occupancyLimit === "number" ? Math.trunc(b.occupancyLimit) : undefined;
+        const inactivityMinutes = typeof b.inactivityMinutes === "number" ? Math.trunc(b.inactivityMinutes) : undefined;
+
+        db.query(
+          `UPDATE shops SET
+             timezone_offset_minutes = COALESCE(?, timezone_offset_minutes),
+             occupancy_limit = COALESCE(?, occupancy_limit),
+             inactivity_minutes_limit = COALESCE(?, inactivity_minutes_limit)
+           WHERE id = ?`,
+        ).run(
+          tzOffsetMinutes ?? null,
+          occupancyLimit ?? null,
+          inactivityMinutes ?? null,
+          id,
+        );
+
+        return json({ code: 0, msg: "success", data: { id, timezoneOffsetMinutes: tzOffsetMinutes, occupancyLimit, inactivityMinutes } });
+      }
+
       // Admin: overview & analytics
       if (path === "/api/overview" && req.method === "GET") {
         const shopId = url.searchParams.get("shopId");
         const shop = shopId ? Number(shopId) : undefined;
-        const overview = getOverviewToday(db, Number.isFinite(shop as number) ? (shop as number) : undefined);
-        const occupancy =
-          shop && Number.isFinite(shop) ?
-            getShopOccupancy(db, shop) :
-            null;
-        return json({ code: 0, msg: "success", data: { ...overview, occupancy } });
+        const shopNum = Number.isFinite(shop as number) ? (shop as number) : undefined;
+        const tz = shopNum
+          ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(shopNum)
+          : null;
+        const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
+        const overview = getOverviewToday(db, shopNum, tzOffsetMinutes);
+        const occupancy = shopNum ? getShopOccupancy(db, shopNum) : null;
+        return json({ code: 0, msg: "success", data: { ...overview, occupancy, timezoneOffsetMinutes: tzOffsetMinutes } });
       }
 
       if (path === "/api/analytics" && req.method === "GET") {
         const range = (url.searchParams.get("range") ?? "today") as "today" | "week" | "month";
         const shopId = url.searchParams.get("shopId");
         const shop = shopId ? Number(shopId) : undefined;
-        const traffic = getTrafficSeries(db, range, Number.isFinite(shop as number) ? (shop as number) : undefined);
-        const demo = getDemographics(db, range, Number.isFinite(shop as number) ? (shop as number) : undefined);
+        const shopNum = Number.isFinite(shop as number) ? (shop as number) : undefined;
+        const tz = shopNum
+          ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(shopNum)
+          : null;
+        const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
+        const traffic = getTrafficSeries(db, range, shopNum, tzOffsetMinutes);
+        const demo = getDemographics(db, range, shopNum, tzOffsetMinutes);
         return json({ code: 0, msg: "success", data: { traffic, demographics: demo } });
       }
 
@@ -122,7 +274,17 @@ export function createApi(server: Server, hub: WsHub) {
         const minutes = Number(url.searchParams.get("minutes") ?? "60");
         const shopId = url.searchParams.get("shopId");
         const shop = shopId ? Number(shopId) : undefined;
-        const live = getLiveTraffic(db, Number.isFinite(minutes) ? Math.max(5, Math.min(360, Math.trunc(minutes))) : 60, Number.isFinite(shop as number) ? (shop as number) : undefined);
+        const shopNum = Number.isFinite(shop as number) ? (shop as number) : undefined;
+        const tz = shopNum
+          ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(shopNum)
+          : null;
+        const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
+        const live = getLiveTraffic(
+          db,
+          Number.isFinite(minutes) ? Math.max(5, Math.min(360, Math.trunc(minutes))) : 60,
+          shopNum,
+          tzOffsetMinutes,
+        );
         return json({ code: 0, msg: "success", data: live });
       }
 
@@ -142,8 +304,18 @@ export function createApi(server: Server, hub: WsHub) {
         if (!device) return snNotFound();
 
         db.query(
-          "UPDATE devices SET last_seen = ?, status = 'online', ip_address = COALESCE(?, ip_address), mac_address = COALESCE(?, mac_address) WHERE sn = ?",
-        ).run(nowUnix(), payload.ipAddress ?? null, payload.macAddress ?? null, payload.sn);
+          "UPDATE devices SET last_seen = ?, status = 'online', ip_address = COALESCE(?, ip_address), mac_address = COALESCE(?, mac_address), timezone_offset_hours = COALESCE(?, timezone_offset_hours) WHERE sn = ?",
+        ).run(nowUnix(), payload.ipAddress ?? null, payload.macAddress ?? null, payload.timeZone ?? null, payload.sn);
+
+        const shopRow = db
+          .query<{ timezone_offset_minutes: number | null }, [string]>(
+            `SELECT s.timezone_offset_minutes AS timezone_offset_minutes
+             FROM devices d
+             JOIN shops s ON s.id = d.shop_id
+             WHERE d.sn = ?`,
+          )
+          .get(payload.sn);
+        const tzOffsetMinutes = shopRow?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
 
         return json({
           code: 0,
@@ -152,6 +324,7 @@ export function createApi(server: Server, hub: WsHub) {
             uploadInterval: 0,
             dataMode: (device.data_mode === "Total" ? "Total" : "Add") as DataMode,
             time: nowUnix(),
+            timezone: Math.trunc(tzOffsetMinutes / 60),
           },
         });
       }
@@ -182,6 +355,7 @@ export function createApi(server: Server, hub: WsHub) {
           let outDelta = payload.out;
           let passDelta = payload.passby;
           let turnDelta = payload.turnback;
+          const eventUid = buildEventUid(payload, mode);
 
           if (mode === "Total") {
             const counters = db
@@ -209,11 +383,13 @@ export function createApi(server: Server, hub: WsHub) {
             ).run(payload.sn, payload.time, payload.in, payload.out, payload.passby, payload.turnback, nowUnix());
           }
 
-          db.query(
+          const flowInsert = db.query(
             `INSERT INTO flow_events
-              (sn, timestamp, start_time, end_time, in_count, out_count, passby, turnback, avg_stay_time_ms, data_mode, raw_in, raw_out, raw_passby, raw_turnback, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (event_uid, sn, timestamp, start_time, end_time, in_count, out_count, passby, turnback, avg_stay_time_ms, data_mode, raw_in, raw_out, raw_passby, raw_turnback, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event_uid) DO NOTHING`,
           ).run(
+            eventUid,
             payload.sn,
             payload.time,
             payload.startTime ?? null,
@@ -231,15 +407,21 @@ export function createApi(server: Server, hub: WsHub) {
             nowUnix(),
           );
 
+          if ((flowInsert as { changes?: number }).changes === 0) {
+            return { duplicate: true, eventUid, inDelta: 0, outDelta: 0, passDelta: 0, turnDelta: 0 };
+          }
+
           if (payload.attributes?.length) {
             const stmt = db.query(
               `INSERT INTO people_attributes
-                (sn, person_id, timestamp, gender, age_min, age_max, height, stay_time_ms, event_type, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (sn, source_event_uid, person_id, timestamp, gender, age_min, age_max, height, stay_time_ms, event_type, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT DO NOTHING`,
             );
             for (const attr of payload.attributes) {
               stmt.run(
                 payload.sn,
+                eventUid,
                 attr.personId ?? null,
                 payload.time,
                 attr.gender ?? null,
@@ -252,26 +434,90 @@ export function createApi(server: Server, hub: WsHub) {
               );
             }
           }
-          return { inDelta, outDelta, passDelta, turnDelta };
+          return { duplicate: false, eventUid, inDelta, outDelta, passDelta, turnDelta };
         })();
 
         const deviceOcc = getDeviceOccupancy(db, payload.sn);
         const shopOcc = device.shop_id ? getShopOccupancy(db, device.shop_id) : null;
 
-        hub.broadcast("flow:update", {
-          sn: payload.sn,
-          time: payload.time,
-          mode,
-          counts: { in: inserted.inDelta, out: inserted.outDelta, passby: inserted.passDelta, turnback: inserted.turnDelta },
-          occupancy: { device: deviceOcc, shop: shopOcc },
-        });
-        hub.broadcast("occupancy:update", { sn: payload.sn, occupancy: deviceOcc, shopId: device.shop_id, shopOccupancy: shopOcc });
+        if (!inserted.duplicate) {
+          hub.broadcast("flow:update", {
+            sn: payload.sn,
+            time: payload.time,
+            mode,
+            counts: { in: inserted.inDelta, out: inserted.outDelta, passby: inserted.passDelta, turnback: inserted.turnDelta },
+            occupancy: { device: deviceOcc, shop: shopOcc },
+          });
+          hub.broadcast("occupancy:update", { sn: payload.sn, occupancy: deviceOcc, shopId: device.shop_id, shopOccupancy: shopOcc });
+        }
 
         return json({
           code: 0,
           msg: "Reported successfully",
           data: { sn: payload.sn, time: payload.time },
         });
+      }
+
+      // Camera: daily duplicate report (/dup) and reid report (/reid) per vendor doc
+      if ((path === "/api/camera/dup" || path === "/dup") && req.method === "POST") {
+        const ip = server.requestIP(req)?.address ?? "unknown";
+        if (!limiter.allow(`dup:${ip}`)) return json({ code: 429, msg: "rate limited" }, { status: 429 });
+
+        const body = await readJson(req);
+        if (typeof body !== "object" || body === null) return badRequest("body must be object");
+
+        const b = body as Record<string, unknown>;
+        let sn: string | null = typeof b.sn === "string" ? b.sn : null;
+        const records = Array.isArray(b.records) ? (b.records as any[]) : [];
+        if (!sn && records.length) {
+          const firstEnter = records?.[0]?.enters?.[0];
+          if (firstEnter && typeof firstEnter.cameraSN === "string") sn = firstEnter.cameraSN;
+        }
+        if (!sn) return badRequest("sn/cameraSN missing");
+        const device = db.query<{ sn: string }, [string]>("SELECT sn FROM devices WHERE sn = ?").get(sn);
+        if (!device) return snNotFound();
+
+        const reportTime =
+          typeof b.time === "number" ? Math.trunc(b.time) :
+          typeof b.timestamp === "number" ? Math.trunc(b.timestamp) :
+          nowUnix();
+
+        db.query(
+          "INSERT INTO camera_reports (sn, report_type, report_time, payload_json, created_at) VALUES (?, 'dup', ?, ?, ?)",
+        ).run(sn, reportTime, JSON.stringify(body), nowUnix());
+
+        return json({ code: 0, msg: "Reported successfully" });
+      }
+
+      if ((path === "/api/camera/reid" || path === "/reid") && req.method === "POST") {
+        const ip = server.requestIP(req)?.address ?? "unknown";
+        if (!limiter.allow(`reid:${ip}`)) return json({ code: 429, msg: "rate limited" }, { status: 429 });
+
+        const body = await readJson(req);
+        if (typeof body !== "object" && !Array.isArray(body)) return badRequest("body must be object/array");
+
+        // Try to extract a camera SN from the first pair if possible.
+        let sn: string | null = null;
+        if (Array.isArray(body)) {
+          const first = body[0] as any;
+          const firstPair = first?.pairs?.[0];
+          const enter = firstPair?.enter;
+          if (enter && typeof enter.cameraSN === "string") sn = enter.cameraSN;
+        } else {
+          const b = body as any;
+          const firstPair = b?.pairs?.[0];
+          const enter = firstPair?.enter;
+          if (enter && typeof enter.cameraSN === "string") sn = enter.cameraSN;
+        }
+        if (!sn) return badRequest("cameraSN missing");
+        const device = db.query<{ sn: string }, [string]>("SELECT sn FROM devices WHERE sn = ?").get(sn);
+        if (!device) return snNotFound();
+
+        db.query(
+          "INSERT INTO camera_reports (sn, report_type, report_time, payload_json, created_at) VALUES (?, 'reid', ?, ?, ?)",
+        ).run(sn, nowUnix(), JSON.stringify(body), nowUnix());
+
+        return json({ code: 0, msg: "Reported successfully" });
       }
 
       if (path.startsWith("/api/")) return json({ code: 404, msg: "not found" }, { status: 404 });

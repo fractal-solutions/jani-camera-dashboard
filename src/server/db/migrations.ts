@@ -89,5 +89,51 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_people_attrs_sn_ts ON people_attributes(sn, timestamp);
     `,
   },
+  {
+    id: "002_shop_timezone_offset",
+    up: `
+      ALTER TABLE shops ADD COLUMN timezone_offset_minutes INTEGER NOT NULL DEFAULT 180;
+      ALTER TABLE devices ADD COLUMN timezone_offset_hours INTEGER;
+    `,
+  },
+  {
+    id: "003_dedupe_event_uid",
+    up: `
+      ALTER TABLE flow_events ADD COLUMN event_uid TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_events_event_uid ON flow_events(event_uid) WHERE event_uid IS NOT NULL;
+      ALTER TABLE people_attributes ADD COLUMN source_event_uid TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_people_attrs_src_person_ts ON people_attributes(source_event_uid, person_id, timestamp, event_type) WHERE source_event_uid IS NOT NULL;
+    `,
+  },
+  {
+    id: "004_camera_reports",
+    up: `
+      CREATE TABLE IF NOT EXISTS camera_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sn TEXT,
+        report_type TEXT NOT NULL,
+        report_time INTEGER,
+        payload_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_camera_reports_type_time ON camera_reports(report_type, report_time);
+      CREATE INDEX IF NOT EXISTS idx_camera_reports_sn_time ON camera_reports(sn, report_time);
+    `,
+  },
+  {
+    id: "005_person_labels",
+    up: `
+      CREATE TABLE IF NOT EXISTS person_labels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sn TEXT NOT NULL,
+        person_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(sn, person_id),
+        FOREIGN KEY (sn) REFERENCES devices(sn) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_person_labels_sn ON person_labels(sn);
+    `,
+  },
 ];
-
