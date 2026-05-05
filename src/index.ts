@@ -31,6 +31,7 @@ const server = serve({
     "/api/analytics": apiHandler,
     "/api/traffic/live": apiHandler,
     "/api/people": apiHandler,
+    "/api/metrics": apiHandler,
     "/api/camera/heartBeat": apiHandler,
     "/api/camera/dataUpload": apiHandler,
     "/api/camera/dup": apiHandler,

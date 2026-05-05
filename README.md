@@ -127,6 +127,12 @@ DB file path: `DB_PATH` (default: `./data/app.sqlite`).
 
 It is safe to run repeatedly: applied migrations are tracked in `schema_migrations` and only new migrations run.
 
+## Integration API (Odoo)
+
+For Odoo dashboard metrics (read-only), see:
+
+- `API.md` (especially `GET /api/metrics`)
+
 ## Timezone configuration
 
 This dashboard groups “today / hourly / daily” using a **shop timezone offset** (minutes).

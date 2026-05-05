@@ -52,6 +52,7 @@ export type Overview = {
   returnVisitors: number;
   occupancy: number | null;
   timezoneOffsetMinutes?: number;
+  occupancySince?: number;
 };
 
 export type LiveTraffic = {

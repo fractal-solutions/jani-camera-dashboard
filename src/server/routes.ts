@@ -4,7 +4,17 @@ import { getDb, migrateDb } from "./db";
 import { json } from "./http/json";
 import { readJson } from "./http/body";
 import { RateLimiter } from "./http/rateLimit";
-import { getDeviceOccupancy, getDemographics, getLiveTraffic, getOverviewToday, getShopOccupancy, getTrafficSeries } from "./analytics";
+import {
+  getDemographics,
+  getDeviceOccupancy,
+  getDeviceOccupancySince,
+  getLiveTraffic,
+  getOverviewToday,
+  getShopOccupancy,
+  getShopOccupancySince,
+  getTrafficSeries,
+  startOfDayUnix,
+} from "./analytics";
 import { parseDataUpload, parseHeartbeat } from "./validation";
 import { WsHub } from "./ws";
 
@@ -288,8 +298,13 @@ export function createApi(server: Server, hub: WsHub) {
           : null;
         const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
         const overview = getOverviewToday(db, shopNum, tzOffsetMinutes);
-        const occupancy = shopNum ? getShopOccupancy(db, shopNum) : null;
-        return json({ code: 0, msg: "success", data: { ...overview, occupancy, timezoneOffsetMinutes: tzOffsetMinutes } });
+        const dayStart = startOfDayUnix(nowUnix(), tzOffsetMinutes);
+        const occupancy = shopNum ? getShopOccupancySince(db, shopNum, dayStart) : null;
+        return json({
+          code: 0,
+          msg: "success",
+          data: { ...overview, occupancy, occupancySince: dayStart, timezoneOffsetMinutes: tzOffsetMinutes },
+        });
       }
 
       if (path === "/api/analytics" && req.method === "GET") {
@@ -322,6 +337,42 @@ export function createApi(server: Server, hub: WsHub) {
           tzOffsetMinutes,
         );
         return json({ code: 0, msg: "success", data: live });
+      }
+
+      // Odoo-friendly metrics: single call to fetch everything needed
+      if (path === "/api/metrics" && req.method === "GET") {
+        const range = (url.searchParams.get("range") ?? "today") as "today" | "week" | "month";
+        const shopId = url.searchParams.get("shopId");
+        const shop = shopId ? Number(shopId) : undefined;
+        const shopNum = Number.isFinite(shop as number) ? (shop as number) : undefined;
+
+        const tz = shopNum
+          ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(shopNum)
+          : null;
+        const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
+
+        const overview = getOverviewToday(db, shopNum, tzOffsetMinutes);
+        const dayStart = startOfDayUnix(nowUnix(), tzOffsetMinutes);
+        const occupancy = shopNum ? getShopOccupancySince(db, shopNum, dayStart) : null;
+
+        const traffic = getTrafficSeries(db, range, shopNum, tzOffsetMinutes);
+        const demographics = getDemographics(db, range, shopNum, tzOffsetMinutes);
+
+        // for “today” style live graph, keep it lightweight
+        const liveTraffic = getLiveTraffic(db, 60, shopNum, tzOffsetMinutes);
+
+        return json({
+          code: 0,
+          msg: "success",
+          data: {
+            shopId: shopNum ?? null,
+            timezoneOffsetMinutes: tzOffsetMinutes,
+            overview: { ...overview, occupancy, occupancySince: dayStart },
+            traffic,
+            liveTraffic,
+            demographics,
+          },
+        });
       }
 
       // Camera: heartbeat (STRICT RESPONSE)
@@ -473,8 +524,13 @@ export function createApi(server: Server, hub: WsHub) {
           return { duplicate: false, eventUid, inDelta, outDelta, passDelta, turnDelta };
         })();
 
-        const deviceOcc = getDeviceOccupancy(db, payload.sn);
-        const shopOcc = device.shop_id ? getShopOccupancy(db, device.shop_id) : null;
+        const tzRow = device.shop_id
+          ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(device.shop_id)
+          : null;
+        const tzOffsetMinutes = tzRow?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
+        const dayStart = startOfDayUnix(nowUnix(), tzOffsetMinutes);
+        const deviceOcc = getDeviceOccupancySince(db, payload.sn, dayStart);
+        const shopOcc = device.shop_id ? getShopOccupancySince(db, device.shop_id, dayStart) : null;
 
         if (!inserted.duplicate) {
           hub.broadcast("flow:update", {

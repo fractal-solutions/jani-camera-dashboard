@@ -14,6 +14,15 @@ export function getDeviceOccupancy(db: Database, sn: string): number {
   return Math.max(0, row?.occ ?? 0);
 }
 
+export function getDeviceOccupancySince(db: Database, sn: string, startUnix: number): number {
+  const row = db
+    .query<{ occ: number }, [string, number]>(
+      "SELECT COALESCE(SUM(in_count) - SUM(out_count), 0) AS occ FROM flow_events WHERE sn = ? AND timestamp >= ?",
+    )
+    .get(sn, startUnix);
+  return Math.max(0, row?.occ ?? 0);
+}
+
 export function getShopOccupancy(db: Database, shopId: number): number {
   const row = db
     .query<{ occ: number }, [number]>(
@@ -24,6 +33,22 @@ export function getShopOccupancy(db: Database, shopId: number): number {
     )
     .get(shopId);
   return Math.max(0, row?.occ ?? 0);
+}
+
+export function getShopOccupancySince(db: Database, shopId: number, startUnix: number): number {
+  const row = db
+    .query<{ occ: number }, [number, number]>(
+      `SELECT COALESCE(SUM(fe.in_count) - SUM(fe.out_count), 0) AS occ
+       FROM flow_events fe
+       JOIN devices d ON d.sn = fe.sn
+       WHERE d.shop_id = ? AND fe.timestamp >= ?`,
+    )
+    .get(shopId, startUnix);
+  return Math.max(0, row?.occ ?? 0);
+}
+
+export function startOfDayUnix(nowUnix: number, timezoneOffsetMinutes: number): number {
+  return startOfDayUnixWithOffset(nowUnix, timezoneOffsetMinutes);
 }
 
 export function getOverviewToday(db: Database, shopId: number | undefined, timezoneOffsetMinutes: number) {
