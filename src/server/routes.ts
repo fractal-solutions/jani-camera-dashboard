@@ -89,6 +89,36 @@ function buildEventUid(payload: {
   ].join("|");
 }
 
+function withTrafficAliases(traffic: ReturnType<typeof getTrafficSeries>) {
+  return {
+    ...traffic,
+    points: traffic.points.map(point => ({
+      ...point,
+      visitors: point.in_sum,
+      entries: point.in_sum,
+      exits: point.out_sum,
+      passby: point.pass_sum,
+      count: point.in_sum,
+    })),
+  };
+}
+
+function withDemographicsAliases(demographics: ReturnType<typeof getDemographics>) {
+  return {
+    ...demographics,
+    gender: demographics.gender.map(row => ({
+      ...row,
+      label: row.gender === 1 ? "Male" : row.gender === 2 ? "Female" : "Unknown",
+      count: row.cnt,
+    })),
+    age: demographics.age.map(row => ({
+      ...row,
+      label: row.bucket,
+      count: row.cnt,
+    })),
+  };
+}
+
 export function createApi(server: Server, hub: WsHub) {
   migrateDb();
   const db = getDb();
@@ -316,8 +346,8 @@ export function createApi(server: Server, hub: WsHub) {
           ? db.query<{ timezone_offset_minutes: number }, [number]>("SELECT timezone_offset_minutes FROM shops WHERE id = ?").get(shopNum)
           : null;
         const tzOffsetMinutes = tz?.timezone_offset_minutes ?? CONFIG.timezoneOffsetMinutes;
-        const traffic = getTrafficSeries(db, range, shopNum, tzOffsetMinutes);
-        const demo = getDemographics(db, range, shopNum, tzOffsetMinutes);
+        const traffic = withTrafficAliases(getTrafficSeries(db, range, shopNum, tzOffsetMinutes));
+        const demo = withDemographicsAliases(getDemographics(db, range, shopNum, tzOffsetMinutes));
         return json({ code: 0, msg: "success", data: { traffic, demographics: demo } });
       }
 
@@ -355,8 +385,8 @@ export function createApi(server: Server, hub: WsHub) {
         const dayStart = startOfDayUnix(nowUnix(), tzOffsetMinutes);
         const occupancy = shopNum ? getShopOccupancySince(db, shopNum, dayStart) : null;
 
-        const traffic = getTrafficSeries(db, range, shopNum, tzOffsetMinutes);
-        const demographics = getDemographics(db, range, shopNum, tzOffsetMinutes);
+        const traffic = withTrafficAliases(getTrafficSeries(db, range, shopNum, tzOffsetMinutes));
+        const demographics = withDemographicsAliases(getDemographics(db, range, shopNum, tzOffsetMinutes));
 
         // for “today” style live graph, keep it lightweight
         const liveTraffic = getLiveTraffic(db, 60, shopNum, tzOffsetMinutes);
@@ -367,10 +397,14 @@ export function createApi(server: Server, hub: WsHub) {
           data: {
             shopId: shopNum ?? null,
             timezoneOffsetMinutes: tzOffsetMinutes,
-            overview: { ...overview, occupancy, occupancySince: dayStart },
+            overview: { ...overview, occupancy, occupancySince: dayStart, timezoneOffsetMinutes: tzOffsetMinutes },
             traffic,
             liveTraffic,
             demographics,
+            avgDwellMs: overview.avgDwellMs,
+            visitorTrend: traffic.points,
+            genderDistribution: demographics.gender,
+            ageDistribution: demographics.age,
           },
         });
       }

@@ -7,6 +7,17 @@ function startOfDayUnixWithOffset(nowUnix: number, offsetMinutes: number): numbe
   return startShifted - offsetSec;
 }
 
+function getRangeStartUnix(
+  nowUnix: number,
+  range: "today" | "week" | "month",
+  timezoneOffsetMinutes: number,
+): number {
+  const todayStart = startOfDayUnixWithOffset(nowUnix, timezoneOffsetMinutes);
+  if (range === "today") return todayStart;
+  if (range === "week") return todayStart - 6 * 86400;
+  return todayStart - 29 * 86400;
+}
+
 export function getDeviceOccupancy(db: Database, sn: string): number {
   const row = db
     .query<{ occ: number }, [string]>("SELECT COALESCE(SUM(in_count) - SUM(out_count), 0) AS occ FROM flow_events WHERE sn = ?")
@@ -70,6 +81,19 @@ export function getOverviewToday(db: Database, shopId: number | undefined, timez
     )
     .get(...params);
 
+  const peopleDwell = db
+    .query<{ avg_dwell_ms: number | null }, any[]>(
+      shopId
+        ? `SELECT AVG(pa.stay_time_ms) AS avg_dwell_ms
+           FROM people_attributes pa
+           JOIN devices d ON d.sn = pa.sn
+           WHERE d.shop_id = ? AND pa.timestamp >= ? AND pa.stay_time_ms IS NOT NULL`
+        : `SELECT AVG(pa.stay_time_ms) AS avg_dwell_ms
+           FROM people_attributes pa
+           WHERE pa.timestamp >= ? AND pa.stay_time_ms IS NOT NULL`,
+    )
+    .get(...params);
+
   const peak = db
     .query<{ peak: number }, any[]>(
       `WITH ordered AS (
@@ -102,7 +126,7 @@ export function getOverviewToday(db: Database, shopId: number | undefined, timez
     visitors: totals?.visitors ?? 0,
     passby: totals?.passby ?? 0,
     turnback: totals?.turnback ?? 0,
-    avgDwellMs: totals?.avg_dwell_ms ?? null,
+    avgDwellMs: totals?.avg_dwell_ms ?? peopleDwell?.avg_dwell_ms ?? null,
     peakOccupancy: Math.max(0, peak?.peak ?? 0),
     returnVisitors: returns?.return_visitors ?? 0,
   };
@@ -110,8 +134,7 @@ export function getOverviewToday(db: Database, shopId: number | undefined, timez
 
 export function getTrafficSeries(db: Database, range: "today" | "week" | "month", shopId: number | undefined, timezoneOffsetMinutes: number) {
   const now = Math.floor(Date.now() / 1000);
-  const seconds = range === "today" ? 24 * 3600 : range === "week" ? 7 * 24 * 3600 : 30 * 24 * 3600;
-  const start = now - seconds;
+  const start = getRangeStartUnix(now, range, timezoneOffsetMinutes);
   const offsetSec = Math.trunc(timezoneOffsetMinutes) * 60;
 
   const group = range === "today" ? "%Y-%m-%d %H:00:00" : "%Y-%m-%d 00:00:00";
@@ -160,8 +183,7 @@ export function getLiveTraffic(db: Database, minutes: number, shopId: number | u
 
 export function getDemographics(db: Database, range: "today" | "week" | "month", shopId: number | undefined, _timezoneOffsetMinutes: number) {
   const now = Math.floor(Date.now() / 1000);
-  const seconds = range === "today" ? 24 * 3600 : range === "week" ? 7 * 24 * 3600 : 30 * 24 * 3600;
-  const start = now - seconds;
+  const start = getRangeStartUnix(now, range, _timezoneOffsetMinutes);
   const whereShop = shopId ? "JOIN devices d ON d.sn = pa.sn WHERE d.shop_id = ? AND pa.timestamp >= ?" : "WHERE pa.timestamp >= ?";
   const params = shopId ? [shopId, start] : [start];
 
@@ -175,18 +197,25 @@ export function getDemographics(db: Database, range: "today" | "week" | "month",
     .query<{ bucket: string; cnt: number }, any[]>(
       `SELECT
         CASE
-          WHEN age_max < 18 THEN '0-17'
-          WHEN age_max < 26 THEN '18-25'
-          WHEN age_max < 36 THEN '26-35'
-          WHEN age_max < 46 THEN '36-45'
-          WHEN age_max < 61 THEN '46-60'
+          WHEN COALESCE(pa.age_max, pa.age_min) < 18 THEN '0-17'
+          WHEN COALESCE(pa.age_max, pa.age_min) < 26 THEN '18-25'
+          WHEN COALESCE(pa.age_max, pa.age_min) < 36 THEN '26-35'
+          WHEN COALESCE(pa.age_max, pa.age_min) < 46 THEN '36-45'
+          WHEN COALESCE(pa.age_max, pa.age_min) < 61 THEN '46-60'
           ELSE '61+'
         END AS bucket,
         COUNT(*) AS cnt
       FROM people_attributes pa
-      ${whereShop}
+      ${whereShop} AND COALESCE(pa.age_min, pa.age_max) IS NOT NULL
       GROUP BY bucket
-      ORDER BY bucket`,
+      ORDER BY CASE bucket
+        WHEN '0-17' THEN 1
+        WHEN '18-25' THEN 2
+        WHEN '26-35' THEN 3
+        WHEN '36-45' THEN 4
+        WHEN '46-60' THEN 5
+        ELSE 6
+      END`,
     )
     .all(...params);
 
