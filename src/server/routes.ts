@@ -646,6 +646,32 @@ export function createApi(server: Server, hub: WsHub) {
         return json({ code: 0, msg: "Reported successfully" });
       }
 
+      // Admin: create shop (without device)
+      if (path === "/api/admin/createShop" && req.method === "POST") {
+        const auth = requireAdmin(req, server);
+        if (auth) return auth;
+        const body = await readJson(req);
+        if (typeof body !== "object" || body === null) return badRequest("body must be object");
+        const b = body as Record<string, unknown>;
+        const name = typeof b.name === "string" ? b.name.trim() : "";
+        if (!name) return badRequest("name required");
+        const tzOffsetMinutes = typeof b.timezoneOffsetMinutes === "number" ? Math.trunc(b.timezoneOffsetMinutes) : CONFIG.timezoneOffsetMinutes;
+        const occupancyLimit = typeof b.occupancyLimit === "number" ? Math.trunc(b.occupancyLimit) : CONFIG.occupancyDefaultLimit;
+        const inactivityMinutes = typeof b.inactivityMinutes === "number" ? Math.trunc(b.inactivityMinutes) : CONFIG.inactivityDefaultMinutes;
+
+        try {
+          db.query(
+            `INSERT INTO shops (name, timezone, timezone_offset_minutes, occupancy_limit, inactivity_minutes_limit, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          ).run(name, CONFIG.timezone, tzOffsetMinutes, occupancyLimit, inactivityMinutes, nowUnix());
+        } catch (e) {
+          if (String(e).includes("UNIQUE")) return badRequest("shop name already exists");
+          throw e;
+        }
+        const shop = db.query<{ id: number }, [string]>("SELECT id FROM shops WHERE name = ?").get(name);
+        return json({ code: 0, msg: "success", data: { id: shop?.id ?? null, name } });
+      }
+
       if (path.startsWith("/api/")) return json({ code: 404, msg: "not found" }, { status: 404 });
       return undefined;
     },

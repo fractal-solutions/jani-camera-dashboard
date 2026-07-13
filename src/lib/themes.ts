@@ -1,0 +1,141 @@
+export type ThemeName = "dark" | "light" | "black" | "emerald" | "ocean" | "sunset";
+
+export type Theme = {
+  name: ThemeName;
+  label: string;
+  preview: string;
+  vars: Record<string, string>;
+};
+
+export const THEMES: Theme[] = [
+  {
+    name: "dark",
+    label: "Dark",
+    preview: "bg-gradient-to-br from-slate-950 to-indigo-950",
+    vars: {
+      "--bg-from": "#020617",
+      "--bg-via": "#0f172a",
+      "--bg-to": "#1e1b4b",
+      "--surface": "rgba(255,255,255,0.04)",
+      "--surface-hover": "rgba(255,255,255,0.08)",
+      "--border": "rgba(255,255,255,0.1)",
+      "--border-strong": "rgba(255,255,255,0.2)",
+      "--text": "rgba(255,255,255,1)",
+      "--text-secondary": "rgba(255,255,255,0.75)",
+      "--text-muted": "rgba(255,255,255,0.55)",
+      "--accent": "#6366f1",
+      "--accent-hover": "#818cf8",
+      "--accent-glow": "rgba(99,102,241,0.25)",
+      "--glass-shine": "0.07",
+    },
+  },
+  {
+    name: "light",
+    label: "Light",
+    preview: "bg-gradient-to-br from-slate-100 to-white",
+    vars: {
+      "--bg-from": "#f1f5f9",
+      "--bg-via": "#ffffff",
+      "--bg-to": "#e2e8f0",
+      "--surface": "rgba(255,255,255,0.7)",
+      "--surface-hover": "rgba(255,255,255,0.85)",
+      "--border": "rgba(0,0,0,0.08)",
+      "--border-strong": "rgba(0,0,0,0.15)",
+      "--text": "rgba(15,23,42,1)",
+      "--text-secondary": "rgba(51,65,85,1)",
+      "--text-muted": "rgba(100,116,139,1)",
+      "--accent": "#4f46e5",
+      "--accent-hover": "#6366f1",
+      "--accent-glow": "rgba(79,70,229,0.2)",
+      "--glass-shine": "0.15",
+    },
+  },
+  {
+    name: "black",
+    label: "Black",
+    preview: "bg-gradient-to-br from-black to-gray-950",
+    vars: {
+      "--bg-from": "#000000",
+      "--bg-via": "#000000",
+      "--bg-to": "#0a0a0a",
+      "--surface": "rgba(255,255,255,0.03)",
+      "--surface-hover": "rgba(255,255,255,0.06)",
+      "--border": "rgba(255,255,255,0.08)",
+      "--border-strong": "rgba(255,255,255,0.15)",
+      "--text": "rgba(255,255,255,1)",
+      "--text-secondary": "rgba(255,255,255,0.7)",
+      "--text-muted": "rgba(255,255,255,0.5)",
+      "--accent": "#8b5cf6",
+      "--accent-hover": "#a78bfa",
+      "--accent-glow": "rgba(139,92,246,0.25)",
+      "--glass-shine": "0.05",
+    },
+  },
+  {
+    name: "emerald",
+    label: "Emerald",
+    preview: "bg-gradient-to-br from-emerald-950 to-teal-950",
+    vars: {
+      "--bg-from": "#022c22",
+      "--bg-via": "#042f2e",
+      "--bg-to": "#0f3d3e",
+      "--surface": "rgba(255,255,255,0.04)",
+      "--surface-hover": "rgba(255,255,255,0.08)",
+      "--border": "rgba(255,255,255,0.1)",
+      "--border-strong": "rgba(255,255,255,0.2)",
+      "--text": "rgba(255,255,255,1)",
+      "--text-secondary": "rgba(255,255,255,0.75)",
+      "--text-muted": "rgba(255,255,255,0.55)",
+      "--accent": "#10b981",
+      "--accent-hover": "#34d399",
+      "--accent-glow": "rgba(16,185,129,0.25)",
+      "--glass-shine": "0.07",
+    },
+  },
+  {
+    name: "ocean",
+    label: "Ocean",
+    preview: "bg-gradient-to-br from-blue-950 to-cyan-950",
+    vars: {
+      "--bg-from": "#0a1628",
+      "--bg-via": "#0c2340",
+      "--bg-to": "#0e2f4a",
+      "--surface": "rgba(255,255,255,0.04)",
+      "--surface-hover": "rgba(255,255,255,0.08)",
+      "--border": "rgba(255,255,255,0.1)",
+      "--border-strong": "rgba(255,255,255,0.2)",
+      "--text": "rgba(255,255,255,1)",
+      "--text-secondary": "rgba(255,255,255,0.75)",
+      "--text-muted": "rgba(255,255,255,0.55)",
+      "--accent": "#06b6d4",
+      "--accent-hover": "#22d3ee",
+      "--accent-glow": "rgba(6,182,212,0.25)",
+      "--glass-shine": "0.07",
+    },
+  },
+  {
+    name: "sunset",
+    label: "Sunset",
+    preview: "bg-gradient-to-br from-orange-950 to-rose-950",
+    vars: {
+      "--bg-from": "#431407",
+      "--bg-via": "#4c0519",
+      "--bg-to": "#451a03",
+      "--surface": "rgba(255,255,255,0.04)",
+      "--surface-hover": "rgba(255,255,255,0.08)",
+      "--border": "rgba(255,255,255,0.1)",
+      "--border-strong": "rgba(255,255,255,0.2)",
+      "--text": "rgba(255,255,255,1)",
+      "--text-secondary": "rgba(255,255,255,0.75)",
+      "--text-muted": "rgba(255,255,255,0.55)",
+      "--accent": "#f97316",
+      "--accent-hover": "#fb923c",
+      "--accent-glow": "rgba(249,115,22,0.25)",
+      "--glass-shine": "0.07",
+    },
+  },
+];
+
+export function getThemeByName(name: ThemeName): Theme {
+  return THEMES.find(t => t.name === name) ?? THEMES[0];
+}

@@ -12,22 +12,31 @@ export function StatCard({
   tone?: "neutral" | "good" | "warn" | "bad";
 }) {
   const ring =
-    tone === "good" ? "ring-emerald-400/20"
-    : tone === "warn" ? "ring-amber-400/20"
-    : tone === "bad" ? "ring-rose-400/25"
-    : "ring-white/10";
+    tone === "good" ? "ring-emerald-400/25"
+    : tone === "warn" ? "ring-amber-400/25"
+    : tone === "bad" ? "ring-rose-400/30"
+    : "ring-[var(--border)]";
 
   const bg =
     tone === "good" ? "bg-emerald-500/10"
     : tone === "warn" ? "bg-amber-500/10"
     : tone === "bad" ? "bg-rose-500/10"
-    : "bg-white/5";
+    : "bg-[var(--surface)]";
+
+  const shadow =
+    tone === "good" ? "shadow-emerald-500/10"
+    : tone === "warn" ? "shadow-amber-500/10"
+    : tone === "bad" ? "shadow-rose-500/10"
+    : "shadow-black/25";
 
   return (
-    <div className={`rounded-2xl ${bg} p-5 ring-1 ${ring} backdrop-blur`}>
-      <div className="text-xs font-medium uppercase tracking-wide text-white/55">{label}</div>
-      <div className="mt-2 text-3xl font-semibold tracking-tight">{value}</div>
-      {sub ? <div className="mt-2 text-sm text-white/60">{sub}</div> : null}
+    <div className={`relative overflow-hidden rounded-2xl ${bg} p-5 ring-1 ${ring} shadow-lg ${shadow} backdrop-blur-xl`}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-10 rounded-t-2xl bg-gradient-to-b from-white/[var(--glass-shine)] to-transparent" />
+      <div className="relative">
+        <div className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">{label}</div>
+        <div className="mt-2 text-3xl font-semibold tracking-tight text-[var(--text)]">{value}</div>
+        {sub ? <div className="mt-2 text-sm text-[var(--text-muted)]">{sub}</div> : null}
+      </div>
     </div>
   );
 }

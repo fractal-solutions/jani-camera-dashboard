@@ -25,6 +25,7 @@ const server = serve({
     "/api/admin/updateShop": apiHandler,
     "/api/admin/labelPerson": apiHandler,
     "/api/admin/deleteDevice": apiHandler,
+    "/api/admin/createShop": apiHandler,
     "/api/devices": apiHandler,
     "/api/shops": apiHandler,
     "/api/overview": apiHandler,

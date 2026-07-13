@@ -131,4 +131,13 @@ export const api = {
       { sn, personId, label },
       token ? { "x-admin-token": token } : undefined,
     ),
+  createShop: (
+    token: string | undefined,
+    payload: { name: string; timezoneOffsetMinutes?: number; occupancyLimit?: number; inactivityMinutes?: number },
+  ) =>
+    postJson<{ id: number; name: string }>(
+      "/api/admin/createShop",
+      payload,
+      token ? { "x-admin-token": token } : undefined,
+    ),
 };
